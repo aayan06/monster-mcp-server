@@ -75,6 +75,70 @@ server.registerTool(
     }
 );
 
+server.registerTool(
+    'add_eyes',
+    {
+        description: 'Add eyes to the monster. Must be called after create_body.',
+        inputSchema: z.object({
+            style: z.enum([
+                'angry', 'human', 'blue', 'red', 'yellow', 'dead',
+                'closed_feminine', 'closed_happy', 'cute_dark', 'cute_light',
+                'psycho_dark', 'psycho_light',
+            ]).describe('Eye style/expression. "angry" and "human" require a color.'),
+            color: z.enum(['blue', 'green', 'red']).optional().describe('Eye color, only used for style "angry" or "human", default blue'),
+            count: z.number().int().min(1).max(5).optional().describe('Number of eyes, default 2'),
+        }),
+    },
+    async ({ style, color, count }) => {
+        try {
+            const reply = await sendToGame('add_eyes', { style, color, count });
+            return { content: [{ type: 'text', text: reply.result }] };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
+server.registerTool(
+    'add_arms',
+    {
+        description: 'Add arms to the monster (in left/right pairs). Must be called after create_body.',
+        inputSchema: z.object({
+            color: z.enum(['blue', 'green', 'red', 'yellow', 'dark']).describe('Arm color, dark=brown'),
+            pose: z.enum(['A', 'B', 'C', 'D', 'E']).optional().describe('Arm pose variant, default A'),
+            count: z.number().int().min(2).max(6).multipleOf(2).optional().describe('Number of arms (must be even), default 2'),
+        }),
+    },
+    async ({ color, pose, count }) => {
+        try {
+            const reply = await sendToGame('add_arms', { color, pose, count });
+            return { content: [{ type: 'text', text: reply.result }] };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
+server.registerTool(
+    'add_antennas',
+    {
+        description: 'Add antennas to the top of the monster. Must be called after create_body.',
+        inputSchema: z.object({
+            color: z.enum(['blue', 'green', 'red', 'yellow', 'dark']).describe('Antenna color, dark=brown'),
+            count: z.number().int().min(1).max(3).optional().describe('Number of antennas, default 1'),
+            size: z.enum(['small', 'large']).optional().describe('Antenna size, default large'),
+        }),
+    },
+    async ({ color, count, size }) => {
+        try {
+            const reply = await sendToGame('add_antennas', { color, count, size });
+            return { content: [{ type: 'text', text: reply.result }] };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
 // --- TODO: define more tools here
 
 
