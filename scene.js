@@ -76,6 +76,20 @@ class MonsterScene extends Phaser.Scene {
         // and list themselves via list_experimental_commands.
         this.experimental = {};
 
+        // Keep the game loop running when this tab is hidden or fully covered.
+        // Phaser's Game.onHidden calls loop.pause() on the visibility event,
+        // which stops update() draining commandQueue and makes every MCP call
+        // fail with "Game did not respond within 5 seconds". Phaser 4 registers
+        // exactly one 'hidden' listener, so clearing the event is safe.
+        //
+        // This lives here rather than in main.js on purpose: Game.start()
+        // registers the listener AFTER both postBoot and the READY event, so
+        // removing it from main.js would run too early and silently do nothing.
+        // A scene's create() is the first point that is reliably after start().
+        // See main.js for the other half — the loop must also be driven by
+        // setTimeout, since browsers suspend requestAnimationFrame when hidden.
+        this.game.events.off('hidden');
+
         this.connectToBridge();
     }
 

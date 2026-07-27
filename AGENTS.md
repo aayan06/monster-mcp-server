@@ -128,10 +128,18 @@ screenshot that would have shown you what broke.
 - Verify manually: open the served `index.html`, confirm the on-screen status
   text turns "bridge connected" (green), then invoke MCP tools and watch the
   monster update in the browser.
-- **The game tab must stay open and visible.** Phaser pauses its update loop in a
-  hidden/backgrounded tab, so the queue stops draining and every tool call fails
-  with "Game did not respond within 5 seconds." A closed tab can leave a stale
-  socket on the Node side that fails the same way — reload the page to recover.
+- **The game tab must stay open, but no longer has to be visible.** Phaser
+  pauses its loop in a hidden tab by default — and Chrome counts a fully covered
+  window as hidden — which stops the queue draining and fails every tool call
+  with "Game did not respond within 5 seconds." Two changes together prevent
+  this: `fps: { forceSetTimeOut: true }` in `main.js` (browsers suspend
+  requestAnimationFrame when hidden, so the loop is driven by `setTimeout`
+  instead) and `this.game.events.off('hidden')` in `create()` (drops Phaser's
+  pause-on-hidden listener). Keep both or the freeze returns. Known limit:
+  Chrome throttles background timers hard after five unbroken minutes hidden,
+  which can exceed the 5s bridge timeout — show the tab briefly to reset it.
+- A **closed** tab can still leave a stale socket on the Node side, which fails
+  with the same 5s timeout rather than "No game connected" — reload to recover.
 - After editing `scene.js`, reload the game tab before calling anything; the
   browser is running the old copy until you do.
 
