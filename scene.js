@@ -3,6 +3,7 @@ class MonsterScene extends Phaser.Scene {
         super('MonsterScene');
         this.commandQueue = [];
         this.monster = {};
+        this.partColors = {};   // part name -> { base: {name, hex}, tint }
         this.ws = null;
         this.connected = false;
     }
@@ -63,6 +64,18 @@ class MonsterScene extends Phaser.Scene {
     create() {
         this.statusText = this.add.text(10, 10, 'waiting for bridge connection...',
             { color: '#888', fontSize: '14px' });
+
+        // Experimental capability registry. New capabilities are added here —
+        // NOT as new cases in executeCommand. Each entry is keyed by command
+        // name and holds three fields:
+        //   description — honest, specific prose about what it actually does
+        //   params      — prose describing the params it accepts
+        //   handler     — (params) => string, the result sent back over the
+        //                 bridge (may return a Promise of one)
+        // Entries are reachable from the MCP side via experimental_command,
+        // and list themselves via list_experimental_commands.
+        this.experimental = {};
+
         this.connectToBridge();
     }
 
@@ -111,16 +124,26 @@ class MonsterScene extends Phaser.Scene {
             if (part && part.destroy) part.destroy();
         }
         this.monster = {};
+        this.partColors = {};
     }
 
     // Destroy an existing part so re-adding it replaces instead of stacking
     destroyPart(name) {
+        delete this.partColors[name];
         const val = this.monster[name];
         if (!val) return;
         for (const obj of [].concat(val)) {
             if (obj && obj.destroy) obj.destroy();
         }
         delete this.monster[name];
+    }
+
+    // Record the base/tint colors a part was placed with, and hand back the
+    // reply-text fragment describing the tint's real (multiplicative) result.
+    recordColors(partName, partType, params) {
+        const base = basePartColor(partType, params);
+        this.partColors[partName] = { base, tint: params.tint || null };
+        return tintNote(base, params.tint);
     }
 
     // Apply the optional styling params (tint, scale, scaleX, scaleY, angle,
@@ -150,7 +173,8 @@ class MonsterScene extends Phaser.Scene {
                 this.clearMonster();
                 const key = `body_${params.color}${params.shape}`;
                 this.monster.body = this.applyStyle(this.add.image(CENTER_X, CENTER_Y, key), params);
-                return `Created a ${params.color} type-${params.shape} body.`;
+                const note = this.recordColors('body', 'body', params);
+                return `Created a ${params.color} type-${params.shape} body${note}.`;
             }
 
             case 'add_arms': {
@@ -171,7 +195,8 @@ class MonsterScene extends Phaser.Scene {
                     arms.push(this.applyStyle(this.add.image(CENTER_X - off.x, y, key).setFlipX(true), params, true));
                 }
                 this.monster.arms = arms;
-                return `Added ${arms.length} ${color} arms (pose ${pose}).`;
+                const note = this.recordColors('arms', 'arms', params);
+                return `Added ${arms.length} ${color} arms (pose ${pose})${note}.`;
             }
 
             case 'add_legs': {
@@ -184,7 +209,8 @@ class MonsterScene extends Phaser.Scene {
                 const rightLeg = this.applyStyle(this.add.image(CENTER_X + off.x, CENTER_Y + off.y, key), params);
                 const leftLeg  = this.applyStyle(this.add.image(CENTER_X - off.x, CENTER_Y + off.y, key).setFlipX(true), params, true);
                 this.monster.legs = [leftLeg, rightLeg];
-                return `Added ${color} legs (shape ${shape}).`;
+                const note = this.recordColors('legs', 'legs', params);
+                return `Added ${color} legs (shape ${shape})${note}.`;
             }
 
             case 'add_eyes': {
@@ -208,7 +234,8 @@ class MonsterScene extends Phaser.Scene {
                     }
                 }
                 this.monster.eyes = eyes;
-                return `Added ${count} ${style} eye(s).`;
+                const note = this.recordColors('eyes', 'eyes', params);
+                return `Added ${count} ${style} eye(s)${note}.`;
             }
 
             case 'add_mouth': {
@@ -218,7 +245,8 @@ class MonsterScene extends Phaser.Scene {
                 const key = `mouth${style.toUpperCase()}`;
                 const off = PARTS.mouth.offset;
                 this.monster.mouth = this.applyStyle(this.add.image(CENTER_X + off.x, CENTER_Y + off.y, key), params);
-                return `Added mouth style ${style}.`;
+                const note = this.recordColors('mouth', 'mouth', params);
+                return `Added mouth style ${style}${note}.`;
             }
 
             case 'add_antennas': {
@@ -236,7 +264,8 @@ class MonsterScene extends Phaser.Scene {
                     antennas.push(this.applyStyle(this.add.image(startX + i * spacing, CENTER_Y + off.y, key), params));
                 }
                 this.monster.antennas = antennas;
-                return `Added ${count} ${color} ${size} antenna(s).`;
+                const note = this.recordColors('antennas', 'antennas', params);
+                return `Added ${count} ${color} ${size} antenna(s)${note}.`;
             }
 
             case 'take_screenshot': {
@@ -245,6 +274,43 @@ class MonsterScene extends Phaser.Scene {
                         resolve(image.src.split(',')[1]);
                     });
                 });
+            }
+
+            case 'describe_monster_colors': {
+                if (!this.monster.body) return 'Error: no body exists yet. Call create_body first.';
+                const bodyInfo = this.partColors.body;
+                const bodyEff = bodyInfo && bodyInfo.base.hex
+                    ? effectiveColor(bodyInfo.base.hex, bodyInfo.tint)
+                    : null;
+                const bodyLum = bodyEff === null ? null : luminance(bodyEff);
+
+                const lines = [];
+                for (const part of Object.keys(this.monster)) {
+                    const info = this.partColors[part];
+                    if (!info) {
+                        lines.push(`${part}: color unknown (placed before color tracking).`);
+                        continue;
+                    }
+                    const tintText = info.tint ? `tint ${info.tint}` : 'no tint';
+                    if (!info.base.hex) {
+                        lines.push(`${part}: base ${info.base.name} (hex unknown), ${tintText}, effective color not computable.`);
+                        continue;
+                    }
+                    const eff = effectiveColor(info.base.hex, info.tint);
+                    const lum = luminance(eff);
+                    let line = `${part}: base ${info.base.name} ${info.base.hex}, ${tintText}, `
+                        + `effective ${eff}, luminance ${lum}`;
+                    if (part === 'body') {
+                        line += ' (body reference)';
+                    } else if (bodyLum !== null) {
+                        line += `, contrast vs body ${Math.abs(lum - bodyLum)}`;
+                    }
+                    lines.push(line + '.');
+                }
+                return 'Phaser tint is multiplicative — effective = base * tint / 255, so tints only darken.\n'
+                    + 'Luminance = 0.2126*R + 0.7152*G + 0.0722*B (0=black, 255=white); '
+                    + 'contrast is the luminance gap from the body.\n'
+                    + lines.join('\n');
             }
 
             case 'get_monster_state': {
@@ -283,8 +349,26 @@ class MonsterScene extends Phaser.Scene {
                 return `Built monster: ${results.join(' ')}`;
             }
 
-            default:
+            case 'list_experimental_commands': {
+                const list = Object.entries(this.experimental).map(([name, entry]) => ({
+                    name,
+                    description: entry.description,
+                    params: entry.params,
+                }));
+                return JSON.stringify(list, null, 2);
+            }
+
+            // Anything not handled above falls through to the experimental
+            // registry, so a capability added to this.experimental is callable
+            // without touching this switch.
+            default: {
+                const entry = this.experimental[command];
+                if (entry && typeof entry.handler === 'function') {
+                    console.error(`[experimental] ${command}`);
+                    return entry.handler.call(this, params || {});
+                }
                 return `Unknown command: ${command}`;
+            }
         }
     }
 }
