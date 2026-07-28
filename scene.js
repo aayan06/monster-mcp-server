@@ -82,6 +82,49 @@ class MonsterScene extends Phaser.Scene {
         // per side — the limit recorded in abyssal-lantern lesson #19. This
         // exists to test whether genuinely spaced four-arm layouts read better.
         // add_arms itself is left untouched.
+        // describe_monster_colors measures every part against the BODY and has
+        // no background reference, so it cannot see a body sinking into the
+        // canvas — the failure abyssal-lantern lesson #29 measured (green body
+        // luminance 50 against a canvas at 47). This reports the gap the other
+        // tool structurally cannot.
+        this.experimental.describe_canvas_contrast = {
+            description: 'Report each part\'s luminance gap against the CANVAS BACKGROUND, which '
+                + 'describe_monster_colors never measures — it compares parts to the body only. Use this to '
+                + 'catch a part that is about to disappear into the backdrop, especially the body itself '
+                + 'after any change to its base color or tint. Flags any gap under 10 as a warning. '
+                + 'Complements rather than replaces describe_monster_colors: that one answers "did this '
+                + 'tint collapse into mud", this one answers "will this part still be visible at all".',
+            params: 'none',
+            handler: function () {
+                const bg = (this.game && this.game.config && this.game.config.backgroundColor) || {};
+                const pick = (a, b, fallback) => (a !== undefined ? a : (b !== undefined ? b : fallback));
+                const bgHex = rgbToHex(
+                    pick(bg.red, bg.r, 45), pick(bg.green, bg.g, 45), pick(bg.blue, bg.b, 68));
+                const bgLum = luminance(bgHex);
+                const header = `Canvas ${bgHex}, luminance ${bgLum}. `
+                    + 'Gap is |part luminance - canvas luminance|; under 10 means the part is separating '
+                    + 'by hue alone and would vanish on a same-hue backdrop.';
+
+                const names = Object.keys(this.monster);
+                if (names.length === 0) return `${header}\nNo parts on the monster yet.`;
+
+                const lines = [];
+                for (const part of names) {
+                    const info = this.partColors[part];
+                    if (!info || !info.base.hex) {
+                        lines.push(`${part}: base color unknown, gap not computable.`);
+                        continue;
+                    }
+                    const eff = effectiveColor(info.base.hex, info.tint);
+                    const lum = luminance(eff);
+                    const gap = Math.abs(lum - bgLum);
+                    lines.push(`${part}: effective ${eff}, luminance ${lum}, gap vs canvas ${gap}`
+                        + (gap < 10 ? '   <-- WARNING: too close to the canvas' : ''));
+                }
+                return `${header}\n${lines.join('\n')}`;
+            },
+        };
+
         this.experimental.add_arms_spaced = {
             description: 'Arms in mirrored left/right pairs, like add_arms, but with a caller-controlled '
                 + 'vertical gap between stacked pairs instead of the hardcoded 45px. Replaces any existing '
