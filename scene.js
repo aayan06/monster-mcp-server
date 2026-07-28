@@ -76,6 +76,47 @@ class MonsterScene extends Phaser.Scene {
         // and list themselves via list_experimental_commands.
         this.experimental = {};
 
+        // Arms with a caller-controlled gap between stacked pairs. The built-in
+        // add_arms hardcodes pairSpacing = 45, which is narrower than a pose-C
+        // arm at scale 0.7 (~105px), so count 4 always collapses into one clump
+        // per side — the limit recorded in abyssal-lantern lesson #19. This
+        // exists to test whether genuinely spaced four-arm layouts read better.
+        // add_arms itself is left untouched.
+        this.experimental.add_arms_spaced = {
+            description: 'Arms in mirrored left/right pairs, like add_arms, but with a caller-controlled '
+                + 'vertical gap between stacked pairs instead of the hardcoded 45px. Replaces any existing '
+                + 'arms rather than stacking on them, and stores its sprites on this.monster.arms so '
+                + 'clear_monster and create_body still destroy them. Identical to add_arms in every other '
+                + 'respect, and does not modify add_arms. Only the vertical gap is configurable — the '
+                + 'horizontal offset is still PARTS.arm.offset.x, so every pair sits at the same width.',
+            params: 'color (blue|green|red|yellow|dark, default blue), pose (A-E, default A), '
+                + 'count (number of arms, rounded up to a whole number of pairs, default 4), '
+                + 'spacing (pixels between stacked pairs, default 100), plus the usual styling params '
+                + 'tint/scale/scaleX/scaleY/angle/dx/dy, which behave exactly as in add_arms — dx is '
+                + 'mirrored and angle negated on the flipped side of each pair.',
+            handler: function (params) {
+                if (!this.monster.body) return 'Error: no body exists yet. Call create_body first.';
+                this.destroyPart('arms');
+                const color = params.color || 'blue';
+                const pose = params.pose || 'A';
+                const count = params.count || 4;
+                const spacing = params.spacing !== undefined ? params.spacing : 100;
+                const key = `arm_${color}${pose}`;
+                const off = PARTS.arm.offset;
+                const pairs = Math.ceil(count / 2);
+                const arms = [];
+                const startY = CENTER_Y + off.y - (spacing * (pairs - 1)) / 2;
+                for (let i = 0; i < pairs; i++) {
+                    const y = startY + i * spacing;
+                    arms.push(this.applyStyle(this.add.image(CENTER_X + off.x, y, key), params));
+                    arms.push(this.applyStyle(this.add.image(CENTER_X - off.x, y, key).setFlipX(true), params, true));
+                }
+                this.monster.arms = arms;
+                const note = this.recordColors('arms', 'arms', params);
+                return `Added ${arms.length} ${color} arms (pose ${pose}) at ${spacing}px pair spacing${note}.`;
+            },
+        };
+
         // Keep the game loop running when this tab is hidden or fully covered.
         // Phaser's Game.onHidden calls loop.pause() on the visibility event,
         // which stops update() draining commandQueue and makes every MCP call
