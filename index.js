@@ -200,6 +200,34 @@ server.registerTool(
     }
 );
 
+// --- Canvas contrast tool ---
+// Promoted from the experimental registry in scene.js. The handler still lives
+// there; this registration only gives it a schema, a description, and a place in
+// the tool list, so it no longer has to be reached through experimental_command.
+server.registerTool(
+    'describe_canvas_contrast',
+    {
+        description: 'Report every part\'s luminance gap against the CANVAS BACKGROUND, and flag any gap '
+            + 'under 10 as a warning. This is the measurement describe_monster_colors structurally cannot '
+            + 'make: that tool compares each part to the BODY and holds no background reference, so it '
+            + 'reports a healthy monster even while the body itself sinks into the backdrop. Use this '
+            + 'after any change to the body\'s base color or tint, and before deciding a build is finished — '
+            + 'a part separating from the canvas by hue alone will vanish on a same-hue backdrop. '
+            + 'Complements rather than replaces describe_monster_colors: that one answers "did this tint '
+            + 'collapse into mud", this one answers "will this part still be visible at all". '
+            + 'Reports the canvas color and luminance, then per part: effective color, luminance, and gap.',
+        inputSchema: z.object({}),
+    },
+    async () => {
+        try {
+            const reply = await sendToGame('describe_canvas_contrast');
+            return { content: [{ type: 'text', text: reply.result }] };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
 // --- Screenshot tool ---
 // Screenshots live in gallery/<series-slug>/NNN.png. NNN is derived by scanning
 // the folder for the highest existing number each time, so restarts, parallel
